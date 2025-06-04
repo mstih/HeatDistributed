@@ -2,6 +2,8 @@ package org.mihastih;
 
 import mpi.*;
 
+import java.util.Random;
+
 public class HeatDistributed {
     private static int width = 800;
     private static int height = 600;
@@ -33,10 +35,135 @@ public class HeatDistributed {
         }
 
         grid = new int[width][height];
-        System.out.println("Width: "+ width);
-        System.out.println("Height: "+ height);
-        System.out.println("Number of points: " + numPoints);
+//        System.out.println("Width: "+ width);
+//        System.out.println("Height: "+ height);
+//        System.out.println("Number of points: " + numPoints);
+
+        // Main process adds random heat points
+        if(rank == 0){
+            Random random = new Random(SEED);
+            for (int i = 0; i < numPoints; i++) {
+                int x = random.nextInt(width);
+                int y = random.nextInt(height);
+                grid[x][y] = MAX_TEMP;
+            }
+        }
+
+        // Send grid to all
+        for(int i = 0; i < width; i++){
+            MPI.COMM_WORLD.Bcast(grid[i], 0, height, MPI.INT, 0);
+        }
+
+        // Split the grid for workers
+        int rowsPerWorker = width / size;
+        int start = rank * rowsPerWorker;
+        int end = (rank == size - 1) ? width : start + rowsPerWorker;
+
+        //Start timer on master
+        long startTime = 0;
+        if(rank == 0){
+            System.out.println("Starting Distributed simulation(" + size + " worker threads)...");
+            startTime = System.currentTimeMillis();
+        }
+
+        boolean[] convergedArray = new boolean[1];
+
+        // Main loop
+        while(true){
+            int[][] newGrid = new int[width][height];
+
+            for(int i = start; i < end; i++){
+                for(int j =0; j<height; j++){
+                    newGrid[i][j] = calculateNewTemperature(i, j);
+                }
+            }
+
+            //Calc number of rows and send them as array
+            int numRows = end - start;
+            int[] flatSendBuf = new int[numRows * height];
+
+            // Add rows to flat buffer
+            for (int i = 0; i < numRows; i++) {
+                System.arraycopy(newGrid[start + i], 0, flatSendBuf, i * height, height);
+            }
+
+            int[] flatRecvBuf = null;
+            if (rank == 0) {
+                flatRecvBuf = new int[width * height];  // total rows × columns
+            }
+
+            // Get all the results from workers into flatrecvbuf
+            MPI.COMM_WORLD.Gather(flatSendBuf, 0, flatSendBuf.length, MPI.INT,
+                    flatRecvBuf, 0, flatSendBuf.length, MPI.INT, 0);
+
+            // Copy them beck to original grid
+            if (rank == 0) {
+                for (int i = 0; i < width; i++) {
+                    System.arraycopy(flatRecvBuf, i * height, grid[i], 0, height);
+                }
+            }
+
+            if(rank == 0){
+                convergedArray[0] = isDone();
+            }
+
+            MPI.COMM_WORLD.Bcast(convergedArray, 0, 1, MPI.BOOLEAN, 0);
+            if(convergedArray[0]) break;
+
+            for(int i = 0; i < width; i++){
+                MPI.COMM_WORLD.Bcast(grid[i], 0, height, MPI.INT, 0);
+            }
+        }
+
+
+        // Stop the timer and display time taken for computation
+        if(rank == 0){
+            long endTime = System.currentTimeMillis();
+            System.out.println("Time taken: " + (endTime - startTime) + "ms");
+        }
+
+
         MPI.Finalize();
+    }
+
+    private static boolean isDone() {
+        int temperature = grid[0][0];
+        for (int[] row : grid) {
+            for (int cell : row) {
+                if (cell != temperature) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static int calculateNewTemperature(int x, int y) {
+        if (x == 0 || x == width - 1 || y == 0 || y == height - 1) {
+            return 0;
+        }
+
+        int totalTemp = grid[x][y]; // Include the center cell's temperature
+        int totalCells = 1; // Count the center cell
+
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                int nx = x + dx;
+                int ny = y + dy;
+
+                // Skip the center cell
+                if (dx == 0 && dy == 0) {
+                    continue;
+                }
+
+                // Check if the neighbor cell is within the grid
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                    totalTemp += grid[nx][ny];
+                    totalCells++;
+                }
+            }
+        }
+        return totalTemp / totalCells; // average temperature
     }
 
 
