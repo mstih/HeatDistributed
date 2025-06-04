@@ -14,4 +14,13 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
+    <dependencies>
+        <!-- MPI Dependency -->
+        <dependency>
+            <groupId>com.googlecode.mpj-express</groupId>
+            <artifactId>mpj-v0_44</artifactId>
+            <version>0.44</version>
+        </dependency>
+    </dependencies>
+
 </project>
