@@ -18,8 +18,8 @@ public class HeatDistributed {
 
         int rank = MPI.COMM_WORLD.Rank();
         int size = MPI.COMM_WORLD.Size();
-        System.out.println("Rank: " + rank);
-        System.out.println("Size: " + size);
+        //System.out.println("Rank: " + rank);
+        //System.out.println("Size: " + size);
 
         for (int i = 0; i < args.length; i++) {
             if("width".equals(args[i]) && i + 1 < args.length) {
@@ -45,7 +45,8 @@ public class HeatDistributed {
             for (int i = 0; i < numPoints; i++) {
                 int x = random.nextInt(width);
                 int y = random.nextInt(height);
-                grid[x][y] = MAX_TEMP;
+                //grid[x][y] = MAX_TEMP;
+                addHeat(x, y);
             }
         }
 
@@ -55,9 +56,25 @@ public class HeatDistributed {
         }
 
         // Split the grid for workers
-        int rowsPerWorker = width / size;
-        int start = rank * rowsPerWorker;
-        int end = (rank == size - 1) ? width : start + rowsPerWorker;
+//        int rowsPerWorker = width / size;
+//        int start = rank * rowsPerWorker;
+//        int end = (rank == size - 1) ? width : start + rowsPerWorker;
+        int[] startAndCount = computeStartAndCount(rank, size, width);
+        int start = startAndCount[0];
+        int numRows = startAndCount[1];
+        int end = start + numRows;
+
+        int[] recvCount = new int[size];
+        int[] displs = new int[size];
+        if(rank==0){
+            int disp = 0;
+            for(int i = 0; i < size; i++){
+                int[] sAndC = computeStartAndCount(i, size, width);
+                recvCount[i] = sAndC[1] * height;
+                displs[i] = disp;
+                disp += recvCount[i];
+            }
+        }
 
         //Start timer on master
         long startTime = 0;
@@ -79,11 +96,11 @@ public class HeatDistributed {
             }
 
             //Calc number of rows and send them as array
-            int numRows = end - start;
-            int[] flatSendBuf = new int[numRows * height];
+            int numRows1 = end - start;
+            int[] flatSendBuf = new int[numRows1 * height];
 
             // Add rows to flat buffer
-            for (int i = 0; i < numRows; i++) {
+            for (int i = 0; i < numRows1; i++) {
                 System.arraycopy(newGrid[start + i], 0, flatSendBuf, i * height, height);
             }
 
@@ -93,8 +110,10 @@ public class HeatDistributed {
             }
 
             // Get all the results from workers into flatrecvbuf
-            MPI.COMM_WORLD.Gather(flatSendBuf, 0, flatSendBuf.length, MPI.INT,
-                    flatRecvBuf, 0, flatSendBuf.length, MPI.INT, 0);
+            MPI.COMM_WORLD.Gatherv(
+                    flatSendBuf, 0, flatSendBuf.length, MPI.INT,
+                    flatRecvBuf, 0, recvCount, displs, MPI.INT, 0
+            );
 
             // Copy them beck to original grid
             if (rank == 0) {
@@ -110,6 +129,7 @@ public class HeatDistributed {
             MPI.COMM_WORLD.Bcast(convergedArray, 0, 1, MPI.BOOLEAN, 0);
             if(convergedArray[0]) break;
 
+            // If not send again
             for(int i = 0; i < width; i++){
                 MPI.COMM_WORLD.Bcast(grid[i], 0, height, MPI.INT, 0);
             }
@@ -121,8 +141,6 @@ public class HeatDistributed {
             long endTime = System.currentTimeMillis();
             System.out.println("Time taken: " + (endTime - startTime) + "ms");
         }
-
-
         MPI.Finalize();
     }
 
@@ -166,5 +184,31 @@ public class HeatDistributed {
         return totalTemp / totalCells; // average temperature
     }
 
+    // To calculate the start and end for each worker
+    private static int[] computeStartAndCount(int rank, int size, int width){
+        int base = width / size;
+        int remainder = width % size;
+        int start = rank * base + Math.min(rank, remainder);
+        int count = base + (rank < remainder ? 1 : 0);
+        return new int[]{start, count};
+    }
 
+    private static void addHeat(int x, int y) {
+        System.out.println("Adding heat at (" + x + ", " + y + ")");
+
+        int minX = Math.max(0, x - BRUSH_SIZE);
+        int minY = Math.max(0, y - BRUSH_SIZE);
+        int maxX = Math.min(width - 1, x + BRUSH_SIZE);
+        int maxY = Math.min(height - 1, y + BRUSH_SIZE);
+
+        for (int i = minX; i <= maxX; i++) {
+            for (int j = minY; j <= maxY; j++) {
+                int dx = i - x;
+                int dy = j - y;
+                if (dx * dx + dy * dy <= BRUSH_SIZE * BRUSH_SIZE) {
+                    grid[i][j] = MAX_TEMP; // maximum temperature
+                }
+            }
+        }
+    }
 }
