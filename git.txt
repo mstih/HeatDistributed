@@ -1,0 +1,7 @@
+Prvi del: 
+https://github.com/mstih/HeatSimulationDistributed
+
+Drugi del: 
+https://github.com/mstih/HeatDistributed
+
+Moral sem narediti nov projekt ker sem imel probleme z mavenom, tako da se začne v enem in konča v drugem. 

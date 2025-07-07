@@ -1,0 +1,13 @@
+How to run: 
+
+1. Make sure MPI is included in path by running the following two commands: 
+	"export MPJ_HOME=libs/mpj-v0_44"
+	"export PATH=$MPJ_HOME/bin:$PATH"
+	
+2. Recompile the project by running: 
+	"mvn clean install"
+	
+3. Run the compiled file with MPI (change parameters accordingly):
+	"libs/mpj-v0_44/bin/mpjrun.sh -np 4 -cp target/HeatDistributed-1.0-SNAPSHOT.jar org.mihastih.HeatDistributed width 1024 height 1024 points 10"
+	
+You are done....once it finishes running. 
